@@ -87,7 +87,7 @@ class EagleContext(object):
     self.stop = True
     self.client.loop_stop()
 
-if __name__ == '__main__':
+def main():
   parser = argparse.ArgumentParser(description='Send power information from an eagle-200 to an MQTT broker', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
   required = parser.add_argument_group('required arguments')
@@ -108,3 +108,6 @@ if __name__ == '__main__':
   signal.signal(signal.SIGINT, lambda *args: app.quit())
 
   app.power_reading_loop()
+
+if __name__ == '__main__':
+  main()

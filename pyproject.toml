@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "eagle-200-mqtt"
+version = "0.1.0"
+description = ""
+authors = ["Lukas Rusak <lorusak@gmail.com>"]
+readme = "README.md"
+packages = [{include = "eagle-200-mqtt", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+paho-mqtt = "^2.1.0"
+py-eagle-200 = {git = "https://github.com/lrusak/py-eagle-200.git", rev = "master"}
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+eagle-200-mqtt = "eagle-200-mqtt.main:main"
