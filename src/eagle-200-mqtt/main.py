@@ -3,89 +3,79 @@
 import argparse
 import libeagle
 import signal
-import time
-import paho.mqtt.client as mqtt
+import asyncio
+import aiomqtt
 import logging
 import sys
 
-import urllib
-
 class EagleContext(object):
-    def __init__(self, args):
-        self.delay = args.interval # seconds
-        self.stop = False
 
-        self.log = logging.getLogger("shairport-display")
+    def __init__(self, args) -> None:
+        self.interval = args.interval # seconds
+        self.eagle_ip = args.eagle_ip
+        self.eagle_cloud_id = args.eagle_cloud_id
+        self.eagle_install_code = args.eagle_install_code
+        self.mqtt_ip = args.mqtt_ip
+        self.mqtt_port = args.mqtt_port
 
         self.format = logging.Formatter('%(asctime)s - [%(levelname)s] - %(message)s', "%Y-%m-%d %H:%M:%S")
 
         self.handler = logging.StreamHandler(stream=sys.stdout)
         self.handler.setFormatter(self.format)
-        self.handler.setLevel(logging.DEBUG)
+        self.handler.setLevel(logging.INFO)
 
+        self.log = logging.getLogger(__name__)
         self.log.addHandler(self.handler)
-        self.log.setLevel(logging.DEBUG)
+        self.log.setLevel(logging.INFO)
 
         self.log.info("Starting application")
 
-        self.conn = libeagle.Connection(args.eagle_ip, args.eagle_cloud_id, args.eagle_install_code)
-        self.devices = self.conn.device_list()
-        self.address = self.devices[0]["HardwareAddress"]
-        self.details = self.conn.device_details(self.address)
-        self.name = self.details[0]["Name"]
-        self.variables = self.details[0]["Variables"][0]
-
-        self.client = mqtt.Client("eagle-200-mqtt", True, None, mqtt.MQTTv31)
-        self.client.on_connect = self.on_connect
-        self.client.on_message = self.on_message
-        self.client.connect(args.mqtt_ip, args.mqtt_port)
-        self.client.loop_start()
-
-        while not self.client.is_connected():
-            self.log.info("Connecting to MQTT broker...")
-            time.sleep(5)
-
-    def on_connect(self, client, userdata, flags, rc):
-        self.log.info("Connected to MQTT broker")
-
-    def on_message(self, client, userata, flags, rc):
-        self.log.info("Message recieved")
-
-    def power_reading_loop(self):
+    async def power_reading_loop(self) -> None:
         self.log.info("Starting loop")
 
-        end_time = 0.0
+        try:
+            async with libeagle.Connection(self.eagle_ip, self.eagle_cloud_id, self.eagle_install_code) as conn:
 
-        while not self.stop:
+                while True:
 
-            start_time = time.monotonic()
+                    devices = await conn.device_list()
 
-            if (start_time - end_time) < self.delay:
-                time.sleep(0.5)
-                continue
+                    if len(devices) > 0:
+                        break
 
-            end_time = time.monotonic()
+                    asyncio.sleep(self.interval)
 
-            try:
-                query = self.conn.device_query(self.address, self.name, self.variables)
-            except (urllib.error.HTTPError, OSError):
-                self.log.error(f"Failed to query devices. Retrying in {self.delay}s")
-                continue
+                device = next(x for x in devices if x["Name"] == "Power Meter")
 
-            try:
-                demand = float(query[0]["Variables"]["zigbee:InstantaneousDemand"]) * 1000.0
-            except ValueError:
-                self.log.error(f"Query empty. Retrying in {self.delay}s")
-                continue
+                while True:
+                    try:
+                        async with aiomqtt.Client(hostname=self.mqtt_ip, port=self.mqtt_port) as client:
 
-            self.log.info(f'{demand} W')
-            self.client.publish("power/home", f"power,location=home,sensor=eagle-200 value={demand}")
+                            while True:
 
-        self.log.info("Stopping application")
+                                query = await conn.device_query(device["HardwareAddress"], "Main", "zigbee:InstantaneousDemand")
 
-    def quit(self):
-        self.stop = True
-        self.client.loop_stop()
+                                if len(query) > 0 and len(query["Components"]) > 0:
+
+                                    component = next(x for x in query["Components"] if x["Name"] == "Main")
+
+                                    demand = component["Variables"]["zigbee:InstantaneousDemand"]
+
+                                    power = float(demand) * 1000.0
+                                    self.log.info(f"{power} W")
+                                    await client.publish("power/home", f"power,location=home,sensor=eagle-200 value={power}")
+
+                                await asyncio.sleep(self.interval)
+
+                    except aiomqtt.exceptions.MqttError:
+                        print(f"Connection lost; Reconnecting in {self.interval} seconds ...")
+
+                    await asyncio.sleep(self.interval)
+
+        except asyncio.exceptions.CancelledError:
+            pass
+        finally:
+            self.log.info("Stopping application")
 
 def main():
     parser = argparse.ArgumentParser(description='Send power information from an eagle-200 to an MQTT broker', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -105,9 +95,16 @@ def main():
     args = parser.parse_args()
 
     app = EagleContext(args)
-    signal.signal(signal.SIGINT, lambda *args: app.quit())
 
-    app.power_reading_loop()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    task = asyncio.ensure_future(app.power_reading_loop())
+
+    for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGQUIT):
+        loop.add_signal_handler(signum, lambda: task.cancel())
+
+    loop.run_until_complete(task)
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

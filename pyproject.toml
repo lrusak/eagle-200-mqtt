@@ -8,8 +8,8 @@ packages = [{include = "eagle-200-mqtt", from = "src"}]
 
 [tool.poetry.dependencies]
 python = "^3.10"
-paho-mqtt = "^2.1.0"
-py-eagle-200 = {git = "https://github.com/lrusak/py-eagle-200.git", rev = "master"}
+py-eagle-200 = {git = "https://github.com/lrusak/py-eagle-200.git", rev = "0.1.0"}
+aiomqtt = "^2.1.0"
 
 [build-system]
 requires = ["poetry-core"]
