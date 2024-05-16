@@ -11,6 +11,9 @@ python = "^3.10"
 py-eagle-200 = {git = "https://github.com/lrusak/py-eagle-200.git", rev = "0.1.0"}
 aiomqtt = "^2.1.0"
 
+[tool.poetry.group.dev.dependencies]
+pre-commit = "^3.7.1"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
