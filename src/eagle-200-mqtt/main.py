@@ -48,7 +48,7 @@ class EagleContext(object):
                     if len(devices) > 0:
                         break
 
-                    asyncio.sleep(self.interval)
+                    await asyncio.sleep(self.interval)
 
                 device = next(x for x in devices if x["Name"] == "Power Meter")
 
